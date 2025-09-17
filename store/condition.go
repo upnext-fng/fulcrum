@@ -249,8 +249,18 @@ func (c *FieldCondition[T, V]) Validate() error {
 	case string(OpIsNull), string(OpIsNotNull):
 		// No value validation needed
 	default:
-		if c.value == nil && c.operator != string(OpIsNull) && c.operator != string(OpIsNotNull) {
-			return fmt.Errorf("value cannot be nil for operator %s", c.operator)
+		// Check if value is nil using interface conversion
+		if c.operator != string(OpIsNull) && c.operator != string(OpIsNotNull) {
+			// Convert to interface{} to check for nil
+			iface := any(c.value)
+			if iface == nil {
+				return fmt.Errorf("value cannot be nil for operator %s", c.operator)
+			}
+			// Check if it's a nil pointer, slice, map, channel, function, or interface
+			value := reflect.ValueOf(iface)
+			if (value.Kind() == reflect.Ptr || value.Kind() == reflect.Interface || value.Kind() == reflect.Map || value.Kind() == reflect.Slice || value.Kind() == reflect.Chan || value.Kind() == reflect.Func) && value.IsNil() {
+				return fmt.Errorf("value cannot be nil for operator %s", c.operator)
+			}
 		}
 	}
 

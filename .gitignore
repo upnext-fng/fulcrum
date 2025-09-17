@@ -215,4 +215,7 @@ $RECYCLE.BIN/
 # Windows shortcuts
 *.lnk
 
+.claude
+.serena
+
 # End of https://www.toptal.com/developers/gitignore/api/go,visualstudiocode,goland,macos,windows

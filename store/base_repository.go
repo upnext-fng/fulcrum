@@ -32,15 +32,21 @@ func NewBaseRepository[T Entity](db *gorm.DB, logger logger.Logger) *BaseReposit
 		modelType = modelType.Elem()
 	}
 
-	stmt := &gorm.Statement{DB: db}
-	stmt.Parse(zero)
-	tableName := stmt.Schema.Table
+	//stmt := &gorm.Statement{DB: db}
+	//var tableName string
+	//if err := stmt.Parse(zero); err != nil {
+	//	logger.Error().Err(err).Str("model_type", modelType.Name()).Msg("Failed to parse model, using default table name")
+	//	// Use a fallback table name based on the model type
+	//	tableName = modelType.Name()
+	//} else {
+	//	tableName = stmt.Schema.Table
+	//}
 
 	return &BaseRepository[T]{
 		db:        db,
 		logger:    logger.WithComponent("repository").WithModule(modelType.Name()),
 		modelType: modelType,
-		tableName: tableName,
+		tableName: modelType.Name(),
 	}
 }
 
@@ -442,6 +448,16 @@ type FullRepository[T Entity] struct {
 	*WriteOnlyRepository[T]
 }
 
+// DB returns the underlying database connection
+func (r *FullRepository[T]) DB() *gorm.DB {
+	return r.ReadOnlyRepository.DB()
+}
+
+// Health checks the database connection
+func (r *FullRepository[T]) Health(ctx context.Context) error {
+	return r.ReadOnlyRepository.Health(ctx)
+}
+
 // NewRepository creates a full repository with read and write operations
 func NewRepository[T Entity](db *gorm.DB, logger logger.Logger) Repository[T] {
 	baseRepo := NewBaseRepository[T](db, logger)
@@ -493,6 +509,16 @@ func (r *FullRepository[T]) WithTransaction(tx *gorm.DB) BaseOperations[T] {
 type SoftDeleteFullRepository[T SoftDeletableEntity] struct {
 	*FullRepository[T]
 	softDeleteOps *SoftDeleteOps[T]
+}
+
+// DB returns the underlying database connection
+func (r *SoftDeleteFullRepository[T]) DB() *gorm.DB {
+	return r.FullRepository.DB()
+}
+
+// Health checks the database connection
+func (r *SoftDeleteFullRepository[T]) Health(ctx context.Context) error {
+	return r.FullRepository.Health(ctx)
 }
 
 // SoftDeleteOps contains soft delete specific operations

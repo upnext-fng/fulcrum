@@ -54,7 +54,6 @@ func (s *EchoServer) Start(ctx context.Context) error {
 
 func (s *EchoServer) Configure() error {
 	// we will configure server and middleware here
-
 	if s.engine == nil {
 		s.engine = echo.New()
 	}

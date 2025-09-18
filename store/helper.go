@@ -3,9 +3,6 @@ package store
 import (
 	"reflect"
 	"strings"
-
-	"github.com/pkg/errors"
-	"gorm.io/gorm"
 )
 
 // hasField checks if a struct type has a field with the given name
@@ -47,8 +44,4 @@ func hasField(structType reflect.Type, fieldName string) bool {
 	}
 
 	return false
-}
-
-func IsRecordNotFound(err error) bool {
-	return errors.Is(err, gorm.ErrRecordNotFound)
 }

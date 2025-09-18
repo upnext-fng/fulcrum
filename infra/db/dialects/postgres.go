@@ -6,6 +6,6 @@ import (
 )
 
 // PostgresDB Ex: host=myhost port=myport user=gorm dbname=gorm password=mypassword
-func PostgresDB(uri string) (db *gorm.DB, err error) {
-	return gorm.Open(postgres.Open(uri))
+func PostgresDB(dsn string, gormConfig *gorm.Config) (db *gorm.DB, err error) {
+	return gorm.Open(postgres.Open(dsn), gormConfig)
 }

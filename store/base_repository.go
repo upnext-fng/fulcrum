@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/upnext-fng/fulcrum/logger"
+	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
 
@@ -32,25 +33,15 @@ func NewBaseRepository[T Entity](db *gorm.DB, logger logger.Logger) *BaseReposit
 		modelType = modelType.Elem()
 	}
 
-	//stmt := &gorm.Statement{DB: db}
-	//var tableName string
-	//if err := stmt.Parse(zero); err != nil {
-	//	logger.Error().Err(err).Str("model_type", modelType.Name()).Msg("Failed to parse model, using default table name")
-	//	// Use a fallback table name based on the model type
-	//	tableName = modelType.Name()
-	//} else {
-	//	tableName = stmt.Schema.Table
-	//}
-
 	return &BaseRepository[T]{
 		db:        db,
-		logger:    logger.WithComponent("repository").WithModule(modelType.Name()),
+		logger:    logger,
 		modelType: modelType,
 		tableName: modelType.Name(),
 	}
 }
 
-// Base operations implementation
+// WithContext Base operations implementation
 func (r *BaseRepository[T]) WithContext(ctx context.Context) BaseOperations[T] {
 	return &BaseRepository[T]{
 		db:        r.db.WithContext(ctx),
@@ -94,15 +85,15 @@ func NewReadOnlyRepository[T Entity](db *gorm.DB, logger logger.Logger) ReadRepo
 	}
 }
 
-// Implement ReadOperations interface
+// FindByID Implement ReadOperations interface
 func (r *ReadOnlyRepository[T]) FindByID(ctx context.Context, id string) (*T, error) {
 	var entity T
 	err := r.db.WithContext(ctx).First(&entity, "id = ?", id).Error
 	if err != nil {
 		if IsRecordNotFound(err) {
-			r.logger.Debug().Str("id", id).Msg("Entity not found")
+			r.logger.Debug("Entity not found", zap.String("id", id))
 		} else {
-			r.logger.Error().Err(err).Str("id", id).Msg("Failed to find entity")
+			r.logger.WithErr(err).Error("failed to find entity", zap.String("id", id))
 		}
 		return nil, err
 	}
@@ -141,7 +132,7 @@ func (r *ReadOnlyRepository[T]) Find(ctx context.Context, condition Condition[T]
 
 	err := r.db.WithContext(ctx).Where(sql, args...).Find(&entities).Error
 	if err != nil {
-		r.logger.Error().Err(err).Str("sql", sql).Msg("Failed to find entities")
+		r.logger.WithErr(err).Error("failed to find entities")
 		return nil, err
 	}
 
@@ -159,9 +150,9 @@ func (r *ReadOnlyRepository[T]) FindOne(ctx context.Context, condition Condition
 	err := r.db.WithContext(ctx).Where(sql, args...).First(&entity).Error
 	if err != nil {
 		if IsRecordNotFound(err) {
-			r.logger.Debug().Str("sql", sql).Msg("Entity not found")
+			r.logger.Debug("Entity not found")
 		} else {
-			r.logger.Error().Err(err).Str("sql", sql).Msg("Failed to find entity")
+			r.logger.WithErr(err).Error("failed to find entity")
 		}
 		return nil, err
 	}
@@ -260,11 +251,11 @@ func (r *WriteOnlyRepository[T]) Create(ctx context.Context, entity *T) error {
 
 	err := r.db.WithContext(ctx).Create(entity).Error
 	if err != nil {
-		r.logger.Error().Err(err).Str("id", (*entity).GetID()).Msg("Failed to create entity")
+		r.logger.WithErr(err).Error("failed to create entity")
 		return err
 	}
 
-	r.logger.Info().Str("id", (*entity).GetID()).Msg("Entity created successfully")
+	r.logger.Infof("Created entity with ID %s", (*entity).GetID())
 	return nil
 }
 
@@ -279,11 +270,11 @@ func (r *WriteOnlyRepository[T]) Update(ctx context.Context, entity *T) error {
 
 	err := r.db.WithContext(ctx).Save(entity).Error
 	if err != nil {
-		r.logger.Error().Err(err).Str("id", (*entity).GetID()).Msg("Failed to update entity")
+		r.logger.WithErr(err).Error("failed to update entity")
 		return err
 	}
 
-	r.logger.Info().Str("id", (*entity).GetID()).Msg("Entity updated successfully")
+	r.logger.Infof("Updated entity with ID %s", (*entity).GetID())
 	return nil
 }
 
@@ -306,7 +297,7 @@ func (r *WriteOnlyRepository[T]) Delete(ctx context.Context, id string) error {
 
 	result := r.db.WithContext(ctx).Delete(new(T), "id = ?", id)
 	if result.Error != nil {
-		r.logger.Error().Err(result.Error).Str("id", id).Msg("Failed to delete entity")
+		r.logger.WithErr(result.Error).Error("failed to delete entity")
 		return result.Error
 	}
 
@@ -314,7 +305,7 @@ func (r *WriteOnlyRepository[T]) Delete(ctx context.Context, id string) error {
 		return gorm.ErrRecordNotFound
 	}
 
-	r.logger.Info().Str("id", id).Msg("Entity deleted successfully")
+	r.logger.Infof("Deleted entity with ID %s", id)
 	return nil
 }
 
@@ -335,11 +326,11 @@ func (r *WriteOnlyRepository[T]) UpdateWhere(ctx context.Context, updates map[st
 
 	result := query.Updates(updates)
 	if result.Error != nil {
-		r.logger.Error().Err(result.Error).Msg("Failed to update entities")
+		r.logger.WithErr(result.Error).Error("failed to update entities")
 		return result.Error
 	}
 
-	r.logger.Info().Int64("rows_affected", result.RowsAffected).Msg("Entities updated")
+	r.logger.Infof("Updated %d entities", result.RowsAffected)
 	return nil
 }
 
@@ -356,11 +347,11 @@ func (r *WriteOnlyRepository[T]) DeleteWhere(ctx context.Context, condition Cond
 
 	result := query.Delete(new(T))
 	if result.Error != nil {
-		r.logger.Error().Err(result.Error).Msg("Failed to delete entities")
+		r.logger.WithErr(result.Error).Error("failed to delete entities")
 		return result.Error
 	}
 
-	r.logger.Info().Int64("rows_affected", result.RowsAffected).Msg("Entities deleted")
+	r.logger.Infof("Deleted %d entities", result.RowsAffected)
 	return nil
 }
 
@@ -377,11 +368,11 @@ func (r *WriteOnlyRepository[T]) CreateBatch(ctx context.Context, entities []*T)
 
 	err := r.db.WithContext(ctx).CreateInBatches(entities, 1000).Error
 	if err != nil {
-		r.logger.Error().Err(err).Int("count", len(entities)).Msg("Failed to create batch")
+		r.logger.WithErr(err).Error("failed to create batch")
 		return err
 	}
 
-	r.logger.Info().Int("count", len(entities)).Msg("Batch created successfully")
+	r.logger.Infof("Created %d entities", len(entities))
 	return nil
 }
 
@@ -407,11 +398,11 @@ func (r *WriteOnlyRepository[T]) DeleteBatch(ctx context.Context, ids []string) 
 
 	result := r.db.WithContext(ctx).Delete(new(T), "id IN ?", ids)
 	if result.Error != nil {
-		r.logger.Error().Err(result.Error).Strs("ids", ids).Msg("Failed to delete batch")
+		r.logger.WithErr(result.Error).Error("failed to delete batch")
 		return result.Error
 	}
 
-	r.logger.Info().Strs("ids", ids).Int64("rows_affected", result.RowsAffected).Msg("Batch deleted")
+	r.logger.Infof("Deleted %d entities", result.RowsAffected)
 	return nil
 }
 
@@ -552,7 +543,7 @@ func (r *SoftDeleteFullRepository[T]) SoftDelete(ctx context.Context, id string)
 		Update("deleted_at", now)
 
 	if result.Error != nil {
-		r.softDeleteOps.logger.Error().Err(result.Error).Str("id", id).Msg("Failed to soft delete")
+		r.softDeleteOps.logger.WithErr(result.Error).Error("failed to soft delete")
 		return result.Error
 	}
 
@@ -560,7 +551,7 @@ func (r *SoftDeleteFullRepository[T]) SoftDelete(ctx context.Context, id string)
 		return gorm.ErrRecordNotFound
 	}
 
-	r.softDeleteOps.logger.Info().Str("id", id).Msg("Entity soft deleted")
+	r.softDeleteOps.logger.Info("Entity soft deleted", zap.String("id", id))
 	return nil
 }
 
@@ -574,7 +565,7 @@ func (r *SoftDeleteFullRepository[T]) Restore(ctx context.Context, id string) er
 		Update("deleted_at", nil)
 
 	if result.Error != nil {
-		r.softDeleteOps.logger.Error().Err(result.Error).Str("id", id).Msg("Failed to restore")
+		r.softDeleteOps.logger.WithErr(result.Error).Error("failed to restore")
 		return result.Error
 	}
 
@@ -582,7 +573,7 @@ func (r *SoftDeleteFullRepository[T]) Restore(ctx context.Context, id string) er
 		return gorm.ErrRecordNotFound
 	}
 
-	r.softDeleteOps.logger.Info().Str("id", id).Msg("Entity restored")
+	r.softDeleteOps.logger.Info("Entity restored", zap.String("id", id))
 	return nil
 }
 
@@ -593,7 +584,7 @@ func (r *SoftDeleteFullRepository[T]) ForceDelete(ctx context.Context, id string
 
 	result := r.softDeleteOps.db.WithContext(ctx).Unscoped().Delete(new(T), "id = ?", id)
 	if result.Error != nil {
-		r.softDeleteOps.logger.Error().Err(result.Error).Str("id", id).Msg("Failed to force delete")
+		r.softDeleteOps.logger.WithErr(result.Error).Error("failed to force delete")
 		return result.Error
 	}
 
@@ -601,7 +592,7 @@ func (r *SoftDeleteFullRepository[T]) ForceDelete(ctx context.Context, id string
 		return gorm.ErrRecordNotFound
 	}
 
-	r.softDeleteOps.logger.Info().Str("id", id).Msg("Entity force deleted")
+	r.softDeleteOps.logger.Info("Entity force deleted", zap.String("id", id))
 	return nil
 }
 
@@ -634,14 +625,12 @@ func (r *SoftDeleteFullRepository[T]) CleanupDeleted(ctx context.Context, olderT
 		Delete(new(T))
 
 	if result.Error != nil {
-		r.softDeleteOps.logger.Error().Err(result.Error).Msg("Failed to cleanup deleted entities")
+		r.softDeleteOps.logger.WithErr(result.Error).Error("Failed to cleanup deleted entities")
+		//r.softDeleteOps.logger.Error().Err(result.Error).Msg("Failed to cleanup deleted entities")
 		return 0, result.Error
 	}
 
-	r.softDeleteOps.logger.Info().
-		Int64("deleted_count", result.RowsAffected).
-		Dur("older_than", olderThan).
-		Msg("Cleanup completed")
+	r.softDeleteOps.logger.Infof("Deleted %d entities older than %s", result.RowsAffected, olderThan)
 
 	return result.RowsAffected, nil
 }

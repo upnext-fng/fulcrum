@@ -6,6 +6,6 @@ import (
 )
 
 // MySqlDB Ex: user:password@/db_name?charset=utf8&parseTime=True&loc=Local
-func MySqlDB(uri string) (db *gorm.DB, err error) {
-	return gorm.Open(mysql.Open(uri), &gorm.Config{})
+func MySqlDB(dns string, gormConfig *gorm.Config) (db *gorm.DB, err error) {
+	return gorm.Open(mysql.Open(dns), gormConfig)
 }

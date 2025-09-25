@@ -3,9 +3,14 @@ package main
 
 import (
 	"context"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/labstack/echo/v4"
+	"github.com/upnext-fng/fulcrum/security/jwt"
+	"github.com/upnext-fng/fulcrum/security/middleware"
+	"github.com/upnext-fng/fulcrum/security/password"
 	"go.uber.org/fx"
 
 	"github.com/upnext-fng/fulcrum/configuration"
@@ -49,11 +54,13 @@ func (r *APIRoutes) RegisterRoutes(e *echo.Echo) {
 	// Auth endpoints
 	e.POST("/register", r.Register)
 	e.POST("/login", r.Login)
+	e.POST("/refresh", r.RefreshToken)
 
 	// Protected endpoint
 	protected := e.Group("/protected")
 	protected.Use(r.security.JWTMiddleware())
 	protected.GET("/profile", r.GetProfile)
+	protected.GET("/validate", r.ValidateTokenDemo)
 }
 
 func (r *APIRoutes) Welcome(c echo.Context) error {
@@ -121,17 +128,33 @@ func (r *APIRoutes) Login(c echo.Context) error {
 		return echo.NewHTTPError(401, "Invalid credentials")
 	}
 
+	r.logger.Logger().WithField("user_id", user.ID).Info("User found", user)
+
 	// Verify password
 	if err := r.security.VerifyPassword(user.Password, req.Password); err != nil {
 		r.logger.Logger().WithField("user_id", user.ID).Warn("Login attempt with invalid password")
 		return echo.NewHTTPError(401, "Invalid credentials")
 	}
 
-	// Generate token
-	token, err := r.security.GenerateToken(string(rune(user.ID)), map[string]interface{}{
-		"username": user.Username,
-		"email":    user.Email,
-	})
+	// Generate token pair (access + refresh token) using strongly-typed interface
+	tokenRequest := security.TokenRequest{
+		UserClaims: security.UserClaims{
+			UserID:   strconv.Itoa(int(user.ID)),
+			Username: user.Username,
+			Email:    user.Email,
+			ClientID: "web",
+		},
+		Metadata: security.TokenMetadata{
+			Purpose:     "login",
+			Source:      "web",
+			Environment: "production",
+			Scopes:      []string{"read", "write"},
+			CreatedAt:   time.Now(),
+		},
+		RefreshToken: true, // Enable refresh token generation
+	}
+
+	tokenResponse, err := r.security.GenerateToken(tokenRequest)
 	if err != nil {
 		r.logger.Logger().WithError(err).Error("Failed to generate token")
 		return echo.NewHTTPError(500, "Failed to generate token")
@@ -139,14 +162,54 @@ func (r *APIRoutes) Login(c echo.Context) error {
 
 	r.logger.Logger().WithField("user_id", user.ID).Info("User logged in successfully")
 
-	return c.JSON(200, map[string]interface{}{
-		"message": "Login successful",
-		"token":   token,
+	response := map[string]interface{}{
+		"message":      "Login successful",
+		"access_token": tokenResponse.AccessToken,
+		"token_type":   tokenResponse.TokenType,
+		"expires_in":   tokenResponse.ExpiresIn,
+		"expires_at":   tokenResponse.ExpiresAt,
 		"user": map[string]interface{}{
 			"id":       user.ID,
 			"username": user.Username,
 			"email":    user.Email,
 		},
+	}
+
+	// Include refresh token if generated
+	if tokenResponse.RefreshToken != "" {
+		response["refresh_token"] = tokenResponse.RefreshToken
+	}
+
+	return c.JSON(200, response)
+}
+
+func (r *APIRoutes) RefreshToken(c echo.Context) error {
+	// Parse request body
+	var req struct {
+		RefreshToken string `json:"refresh_token"`
+	}
+
+	if err := c.Bind(&req); err != nil {
+		return echo.NewHTTPError(400, "Invalid request body")
+	}
+
+	if req.RefreshToken == "" {
+		return echo.NewHTTPError(400, "Refresh token is required")
+	}
+
+	// Use the security service to refresh the access token
+	tokenResponse, err := r.security.RefreshAccessToken(req.RefreshToken)
+	if err != nil {
+		r.logger.Logger().WithError(err).Error("Failed to refresh access token")
+		return echo.NewHTTPError(401, "Invalid or expired refresh token")
+	}
+
+	return c.JSON(200, map[string]interface{}{
+		"access_token": tokenResponse.AccessToken,
+		"token_type":   tokenResponse.TokenType,
+		"expires_in":   tokenResponse.ExpiresIn,
+		"expires_at":   tokenResponse.ExpiresAt,
+		"message":      "Token refreshed successfully",
 	})
 }
 
@@ -158,6 +221,47 @@ func (r *APIRoutes) GetProfile(c echo.Context) error {
 		"message": "This is a protected endpoint",
 		"note":    "JWT token is valid",
 		"data":    "User profile data would go here",
+	})
+}
+
+func (r *APIRoutes) ValidateTokenDemo(c echo.Context) error {
+	// Extract token from Authorization header
+	authHeader := c.Request().Header.Get("Authorization")
+	if authHeader == "" {
+		return echo.NewHTTPError(400, "Missing Authorization header")
+	}
+
+	// Parse Bearer token
+	parts := strings.Split(authHeader, " ")
+	if len(parts) != 2 || parts[0] != "Bearer" {
+		return echo.NewHTTPError(400, "Invalid Authorization header format")
+	}
+	token := parts[1]
+
+	// Validate token using strongly-typed interface
+	validationRequest := security.ValidationRequest{
+		Token:          token,
+		RequiredScopes: []string{"read", "write"},
+	}
+
+	validationResponse, err := r.security.ValidateToken(validationRequest)
+	if err != nil {
+		r.logger.Logger().WithError(err).Error("Token validation failed")
+		return echo.NewHTTPError(401, "Token validation failed")
+	}
+
+	if !validationResponse.Valid {
+		return echo.NewHTTPError(401, "Invalid token")
+	}
+
+	return c.JSON(200, map[string]interface{}{
+		"message":       "Token validation successful",
+		"valid":         validationResponse.Valid,
+		"user_claims":   validationResponse.UserClaims,
+		"metadata":      validationResponse.Metadata,
+		"custom_claims": validationResponse.CustomClaims,
+		"expires_at":    validationResponse.ExpiresAt,
+		"issued_at":     validationResponse.IssuedAt,
 	})
 }
 
@@ -189,9 +293,16 @@ func LoadConfig() AppConfig {
 		},
 		// Security defaults
 		Security: security.Config{
-			JWTSecret: "my-super-secret-key-change-in-production",
-			TokenTTL:  24 * time.Hour,
-			HashCost:  10,
+			JWT: jwt.Config{
+				AccessTokenTTL: time.Hour,
+			},
+			Password: password.Config{},
+			Middleware: middleware.Config{
+				Skipper: func(e echo.Context) bool {
+					return true
+				},
+				JWTConfig: jwt.Config{},
+			},
 		},
 		// Observability defaults
 		Observability: observability.Config{
@@ -258,8 +369,10 @@ func StartApplication(
 			obsService.Logger().Info("  GET  /           - Welcome message")
 			obsService.Logger().Info("  GET  /health     - Health check")
 			obsService.Logger().Info("  POST /register   - User registration")
-			obsService.Logger().Info("  POST /login      - User authentication")
+			obsService.Logger().Info("  POST /login      - User authentication (returns access + refresh token)")
+			obsService.Logger().Info("  POST /refresh    - Refresh access token using refresh token")
 			obsService.Logger().Info("  GET  /protected/profile - Protected endpoint (requires JWT)")
+			obsService.Logger().Info("  GET  /protected/validate - Token validation demo")
 
 			return nil
 		},

@@ -159,7 +159,6 @@ func TestJWTService_RefreshAccessToken(t *testing.T) {
 	assert.False(t, newAccessToken.IsExpired())
 }
 
-
 func TestJWTService_InvalidToken(t *testing.T) {
 	config := Config{
 		Secret: "test-secret-key-123",
@@ -232,13 +231,13 @@ func TestClaimsParser_Component(t *testing.T) {
 	// Create a test token
 	token := jwt.New(jwt.SigningMethodHS256)
 	claims := jwt.MapClaims{
-		"user_id":    "test-user-123",
-		"token_type": "access",
-		"exp":        time.Now().Add(time.Hour).Unix(),
-		"iat":        time.Now().Unix(),
-		"nbf":        time.Now().Unix(),
-		"scopes":     []interface{}{"read", "write"},
-		"metadata":   map[string]interface{}{"role": "admin"},
+		"user_id":      "test-user-123",
+		"token_type":   "access",
+		"exp":          time.Now().Add(time.Hour).Unix(),
+		"iat":          time.Now().Unix(),
+		"nbf":          time.Now().Unix(),
+		"scopes":       []interface{}{"read", "write"},
+		"metadata":     map[string]interface{}{"role": "admin"},
 		"custom_field": "custom_value",
 	}
 	token.Claims = claims

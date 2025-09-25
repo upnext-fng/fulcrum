@@ -1,52 +1,33 @@
-# Migration Guide: From `interface{}` to Strong Types
+# Security API: Strongly-Typed Interface Guide
 
-This guide helps you migrate from the legacy `map[string]interface{}` based security API to the new strongly-typed API.
+This guide explains how to use the clean, strongly-typed security API that replaces the legacy `map[string]interface{}` based approach.
 
 ## Overview
 
-The security package has been enhanced with strongly-typed interfaces to provide:
+The security package provides strongly-typed interfaces for:
 - **Type Safety**: Compile-time type checking prevents runtime errors
 - **Better IDE Support**: Auto-completion and better refactoring support
 - **Validation**: Built-in validation for all data structures
 - **Documentation**: Self-documenting code with clear field types
-- **Backward Compatibility**: Legacy methods still work during migration
+- **Clean API**: No legacy methods or compatibility layers
 
-## Migration Strategy
+## Core Concepts
 
-### Phase 1: Preparation
-1. Update your imports to include the new types
-2. Review your current usage of `GenerateToken` and `ValidateToken`
-3. Identify the data you're currently passing in `map[string]interface{}`
+### Strongly-Typed Structures
+The API uses well-defined structures instead of generic maps:
+- `TokenRequest` - For token generation requests
+- `TokenResponse` - For token generation responses
+- `ValidationRequest` - For token validation requests
+- `ValidationResponse` - For token validation responses
+- `UserClaims` - For user authentication data
+- `TokenMetadata` - For token context and metadata
+- `CustomClaims` - For application-specific data
 
-### Phase 2: Gradual Migration
-1. Start using the new `GenerateTokenV2` and `ValidateTokenV2` methods
-2. Use migration helpers for quick conversion
-3. Update one endpoint at a time
-
-### Phase 3: Cleanup
-1. Remove usage of legacy methods
-2. Enable strict mode to prevent legacy method usage
-3. Update tests to use new interfaces
-
-## API Changes
+## API Usage
 
 ### Token Generation
 
-#### Before (Legacy)
-```go
-token, err := securityService.GenerateToken(userID, map[string]interface{}{
-    "username": "john_doe",
-    "email": "john@example.com",
-    "role": "admin",
-    "permissions": []string{"read", "write"},
-    "custom": map[string]interface{}{
-        "theme": "dark",
-        "language": "en",
-    },
-})
-```
-
-#### After (Strongly-typed)
+#### Strongly-Typed Token Generation
 ```go
 request := security.TokenRequest{
     UserClaims: security.UserClaims{
@@ -69,43 +50,20 @@ request := security.TokenRequest{
     },
 }
 
-response, err := securityService.GenerateTokenV2(request)
-```
+response, err := securityService.GenerateToken(request)
+if err != nil {
+    return err
+}
 
-#### Quick Migration (Using Builder)
-```go
-request := security.NewQuickMigrationBuilder(userID).
-    WithUserInfo("john_doe", "john@example.com").
-    WithRole("admin").
-    WithPermissions("read", "write").
-    WithMetadata("login", "web", "production").
-    WithPreference("theme", "dark").
-    WithPreference("language", "en").
-    Build()
-
-response, err := securityService.GenerateTokenV2(request)
+// Access strongly-typed response
+accessToken := response.AccessToken
+tokenType := response.TokenType
+expiresAt := response.ExpiresAt
 ```
 
 ### Token Validation
 
-#### Before (Legacy)
-```go
-token, err := securityService.ValidateToken(tokenString)
-if err != nil {
-    return err
-}
-
-claims, err := securityService.ParseClaims(token)
-if err != nil {
-    return err
-}
-
-// Extract data manually from claims.Metadata
-username := claims.GetMetadataString("username")
-email := claims.GetMetadataString("email")
-```
-
-#### After (Strongly-typed)
+#### Strongly-Typed Token Validation
 ```go
 request := security.ValidationRequest{
     Token:            tokenString,
@@ -113,7 +71,7 @@ request := security.ValidationRequest{
     RequiredAudience: "api",
 }
 
-response, err := securityService.ValidateTokenV2(request)
+response, err := securityService.ValidateToken(request)
 if err != nil {
     return err
 }
@@ -126,181 +84,168 @@ if !response.Valid {
 username := response.UserClaims.Username
 email := response.UserClaims.Email
 permissions := response.UserClaims.Permissions
+scopes := response.Scopes
+expiresAt := response.ExpiresAt
 ```
 
-#### Quick Migration (Using Builder)
+## Common Usage Patterns
+
+### Basic User Authentication Token
 ```go
-request := security.NewValidationBuilder(tokenString).
-    WithRequiredScopes("read", "write").
-    WithRequiredAudience("api").
-    Build()
-
-response, err := securityService.ValidateTokenV2(request)
-```
-
-## Migration Helpers
-
-### Automatic Conversion
-The migration helpers can automatically convert your existing `map[string]interface{}` data:
-
-```go
-// Convert legacy claims to new format
-legacyClaims := map[string]interface{}{
-    "username": "john_doe",
-    "email": "john@example.com",
-    "role": "admin",
+request := security.TokenRequest{
+    UserClaims: security.UserClaims{
+        UserID:   userID,
+        Username: username,
+        Email:    email,
+    },
+    Metadata: security.TokenMetadata{
+        Purpose:     "login",
+        Source:      "web",
+        Environment: "production",
+        CreatedAt:   time.Now(),
+    },
 }
 
-request, err := security.ConvertLegacyClaimsToTokenRequest(userID, legacyClaims)
-if err != nil {
+response, err := securityService.GenerateToken(request)
+```
+
+### API Token with Scopes
+```go
+request := security.TokenRequest{
+    UserClaims: security.UserClaims{
+        UserID: userID,
+    },
+    Metadata: security.TokenMetadata{
+        Purpose:     "api",
+        Source:      "api",
+        Environment: "production",
+        Scopes:      []string{"api:read", "api:write"},
+        CreatedAt:   time.Now(),
+    },
+}
+
+response, err := securityService.GenerateToken(request)
+```
+
+### Web Session Token
+```go
+request := security.TokenRequest{
+    UserClaims: security.UserClaims{
+        UserID:    userID,
+        Username:  username,
+        Email:     email,
+        SessionID: sessionID,
+        ClientID:  "web",
+    },
+    Metadata: security.TokenMetadata{
+        Purpose:     "session",
+        Source:      "web",
+        Environment: "production",
+        CreatedAt:   time.Now(),
+    },
+}
+
+response, err := securityService.GenerateToken(request)
+```
+
+## Validation
+
+### Built-in Validation
+All request structures include built-in validation:
+
+```go
+request := security.TokenRequest{
+    UserClaims: security.UserClaims{
+        UserID: "", // ❌ Will fail validation - required field
+        Email:  "invalid-email", // ❌ Will fail validation - invalid format
+    },
+}
+
+// Validate before using
+if err := request.Validate(); err != nil {
+    // Handle validation errors
+    if validationErrors, ok := err.(security.ValidationErrors); ok {
+        for _, ve := range validationErrors {
+            log.Printf("Field %s: %s", ve.Field, ve.Message)
+        }
+    }
     return err
 }
-
-response, err := securityService.GenerateTokenV2(request)
 ```
 
-### Common Migration Patterns
+## Complete Example
 
-#### Basic User Token
-```go
-// Before
-token, err := securityService.GenerateToken(userID, map[string]interface{}{
-    "username": username,
-    "email": email,
-})
-
-// After (using helper)
-request := security.MigrateBasicUserToken(userID, username, email)
-response, err := securityService.GenerateTokenV2(request)
-```
-
-#### API Token with Scopes
-```go
-// Before
-token, err := securityService.GenerateToken(userID, map[string]interface{}{
-    "scopes": []string{"api:read", "api:write"},
-})
-
-// After (using helper)
-request := security.MigrateAPIToken(userID, []string{"api:read", "api:write"})
-response, err := securityService.GenerateTokenV2(request)
-```
-
-#### Web Session Token
-```go
-// Before
-token, err := securityService.GenerateToken(userID, map[string]interface{}{
-    "username": username,
-    "email": email,
-    "session_id": sessionID,
-})
-
-// After (using helper)
-request := security.MigrateWebSessionToken(userID, username, email, sessionID)
-response, err := securityService.GenerateTokenV2(request)
-```
-
-## Compatibility Configuration
-
-### Default Mode (Recommended)
-```go
-// Both old and new methods work, with deprecation warnings
-config := security.DefaultCompatibilityConfig()
-// Mode: CompatibilityModeEnabled
-// LogDeprecationWarnings: true
-// FailOnLegacyMethods: false
-```
-
-### Strict Mode (For New Projects)
-```go
-config := security.CompatibilityConfig{
-    Mode:                   security.StrictMode,
-    LogDeprecationWarnings: true,
-    FailOnLegacyMethods:    true,
-}
-```
-
-### Legacy Mode (For Gradual Migration)
-```go
-config := security.CompatibilityConfig{
-    Mode:                   security.LegacyMode,
-    LogDeprecationWarnings: false,
-    FailOnLegacyMethods:    false,
-}
-```
-
-## Step-by-Step Migration Example
-
-### 1. Current Code
+### Login Handler
 ```go
 func (h *Handler) Login(c echo.Context) error {
     // ... authentication logic ...
-    
-    token, err := h.security.GenerateToken(user.ID, map[string]interface{}{
-        "username": user.Username,
-        "email": user.Email,
-        "role": user.Role,
-    })
-    
-    return c.JSON(200, map[string]interface{}{
-        "token": token,
-    })
-}
-```
 
-### 2. Add New Method (Parallel Implementation)
-```go
-func (h *Handler) Login(c echo.Context) error {
-    // ... authentication logic ...
-    
-    // New strongly-typed method
-    request := security.NewQuickMigrationBuilder(user.ID).
-        WithUserInfo(user.Username, user.Email).
-        WithRole(user.Role).
-        WithMetadata("login", "web", "production").
-        Build()
-    
-    response, err := h.security.GenerateTokenV2(request)
+    // Generate token using strongly-typed interface
+    request := security.TokenRequest{
+        UserClaims: security.UserClaims{
+            UserID:   strconv.Itoa(int(user.ID)),
+            Username: user.Username,
+            Email:    user.Email,
+            Role:     user.Role,
+            ClientID: "web",
+        },
+        Metadata: security.TokenMetadata{
+            Purpose:     "login",
+            Source:      "web",
+            Environment: "production",
+            Scopes:      []string{"read", "write"},
+            CreatedAt:   time.Now(),
+        },
+    }
+
+    response, err := h.security.GenerateToken(request)
     if err != nil {
         return err
     }
-    
+
     return c.JSON(200, map[string]interface{}{
         "access_token": response.AccessToken,
         "token_type":   response.TokenType,
         "expires_in":   response.ExpiresIn,
         "expires_at":   response.ExpiresAt,
+        "user": map[string]interface{}{
+            "id":       user.ID,
+            "username": user.Username,
+            "email":    user.Email,
+        },
     })
 }
 ```
 
-### 3. Update Validation
+### Token Validation Handler
 ```go
 func (h *Handler) ValidateToken(c echo.Context) error {
     token := extractTokenFromHeader(c)
-    
-    request := security.NewValidationBuilder(token).
-        WithRequiredScopes("api:read").
-        Build()
-    
-    response, err := h.security.ValidateTokenV2(request)
+
+    request := security.ValidationRequest{
+        Token:          token,
+        RequiredScopes: []string{"read"},
+    }
+
+    response, err := h.security.ValidateToken(request)
     if err != nil {
         return echo.NewHTTPError(401, "Invalid token")
     }
-    
+
     if !response.Valid {
         return echo.NewHTTPError(401, "Token validation failed")
     }
-    
+
     return c.JSON(200, map[string]interface{}{
         "valid":       response.Valid,
         "user_claims": response.UserClaims,
         "expires_at":  response.ExpiresAt,
+        "scopes":      response.Scopes,
     })
 }
 ```
 
-## Benefits After Migration
+## Benefits of Strongly-Typed API
 
 ### Type Safety
 ```go
@@ -310,7 +255,7 @@ email := response.UserClaims.Email       // ✅ Safe
 invalid := response.UserClaims.Invalid   // ❌ Compile error
 ```
 
-### Validation
+### Automatic Validation
 ```go
 request := security.TokenRequest{
     UserClaims: security.UserClaims{
@@ -322,77 +267,99 @@ request := security.TokenRequest{
 err := request.Validate() // Returns detailed validation errors
 ```
 
-### Better IDE Support
-- Auto-completion for all fields
-- Go to definition works correctly
-- Refactoring is safer and more reliable
-- Documentation is available inline
+### Enhanced Developer Experience
+- **Auto-completion** for all fields
+- **Go to definition** works correctly
+- **Refactoring** is safer and more reliable
+- **Documentation** is available inline
+- **Self-documenting** code with clear field types
 
-## Common Pitfalls and Solutions
+## Common Patterns and Solutions
 
-### 1. Nested Map Conversion
-**Problem**: Complex nested maps don't convert automatically
+### 1. Custom Application Data
+**Use Case**: Store application-specific data in tokens
 ```go
-// This won't convert properly
-claims := map[string]interface{}{
-    "user": map[string]interface{}{
-        "profile": map[string]interface{}{
-            "preferences": map[string]interface{}{
-                "theme": "dark",
-            },
+request := security.TokenRequest{
+    UserClaims: security.UserClaims{
+        UserID:   userID,
+        Username: username,
+        Email:    email,
+    },
+    CustomClaims: security.CustomClaims{
+        Theme:    "dark",
+        Language: "en",
+        Data: map[string]interface{}{
+            "subscription_tier": "premium",
+            "feature_flags":     []string{"new_ui", "beta_features"},
         },
     },
 }
 ```
 
-**Solution**: Use the builder pattern or manual construction
-```go
-request := security.NewQuickMigrationBuilder(userID).
-    WithPreference("theme", "dark").
-    Build()
-```
-
-### 2. Custom Data Types
-**Problem**: Custom types in `interface{}` fields
-```go
-// Custom types won't convert automatically
-claims := map[string]interface{}{
-    "custom_data": MyCustomStruct{},
-}
-```
-
-**Solution**: Use the `Data` field in `CustomClaims`
-```go
-request.CustomClaims.Data = map[string]interface{}{
-    "custom_data": myCustomStruct,
-}
-```
-
-### 3. Validation Errors
-**Problem**: Validation fails with unclear errors
-
-**Solution**: Check validation errors for details
+### 2. Handling Validation Errors
+**Use Case**: Detailed error handling for validation failures
 ```go
 if err := request.Validate(); err != nil {
     if validationErrors, ok := err.(security.ValidationErrors); ok {
         for _, ve := range validationErrors {
-            log.Printf("Field %s: %s", ve.Field, ve.Message)
+            log.Printf("Validation error - Field: %s, Message: %s", ve.Field, ve.Message)
         }
+        return echo.NewHTTPError(400, "Invalid request data")
     }
-    return err
+    return echo.NewHTTPError(500, "Internal validation error")
 }
 ```
 
-## Testing Your Migration
+### 3. Conditional Token Features
+**Use Case**: Different token configurations based on context
+```go
+request := security.TokenRequest{
+    UserClaims: security.UserClaims{
+        UserID:   userID,
+        Username: username,
+        Email:    email,
+    },
+    Metadata: security.TokenMetadata{
+        Purpose:     "login",
+        Source:      source, // "web", "mobile", "api"
+        Environment: environment,
+        CreatedAt:   time.Now(),
+    },
+}
+
+// Add scopes based on user role
+if user.Role == "admin" {
+    request.Metadata.Scopes = []string{"read", "write", "admin"}
+} else {
+    request.Metadata.Scopes = []string{"read"}
+}
+
+// Enable refresh token for mobile clients
+if source == "mobile" {
+    request.RefreshToken = true
+}
+```
+
+## Testing
 
 ### Unit Tests
 ```go
 func TestTokenGeneration(t *testing.T) {
-    request := security.NewQuickMigrationBuilder("user123").
-        WithUserInfo("john", "john@example.com").
-        Build()
-    
-    response, err := securityService.GenerateTokenV2(request)
+    request := security.TokenRequest{
+        UserClaims: security.UserClaims{
+            UserID:   "user123",
+            Username: "john",
+            Email:    "john@example.com",
+        },
+        Metadata: security.TokenMetadata{
+            Purpose:     "test",
+            Source:      "unit_test",
+            Environment: "test",
+            CreatedAt:   time.Now(),
+        },
+    }
+
+    response, err := securityService.GenerateToken(request)
     assert.NoError(t, err)
     assert.NotEmpty(t, response.AccessToken)
     assert.Equal(t, "Bearer", response.TokenType)
@@ -403,68 +370,71 @@ func TestTokenGeneration(t *testing.T) {
 ```go
 func TestEndToEndTokenFlow(t *testing.T) {
     // Generate token
-    request := security.NewQuickMigrationBuilder("user123").
-        WithUserInfo("john", "john@example.com").
-        WithScopes("read", "write").
-        Build()
-    
-    response, err := securityService.GenerateTokenV2(request)
+    request := security.TokenRequest{
+        UserClaims: security.UserClaims{
+            UserID:   "user123",
+            Username: "john",
+            Email:    "john@example.com",
+        },
+        Metadata: security.TokenMetadata{
+            Purpose:     "test",
+            Source:      "integration_test",
+            Environment: "test",
+            Scopes:      []string{"read", "write"},
+            CreatedAt:   time.Now(),
+        },
+    }
+
+    response, err := securityService.GenerateToken(request)
     require.NoError(t, err)
-    
+
     // Validate token
-    validationRequest := security.NewValidationBuilder(response.AccessToken).
-        WithRequiredScopes("read").
-        Build()
-    
-    validationResponse, err := securityService.ValidateTokenV2(validationRequest)
+    validationRequest := security.ValidationRequest{
+        Token:          response.AccessToken,
+        RequiredScopes: []string{"read"},
+    }
+
+    validationResponse, err := securityService.ValidateToken(validationRequest)
     require.NoError(t, err)
     assert.True(t, validationResponse.Valid)
     assert.Equal(t, "john", validationResponse.UserClaims.Username)
 }
 ```
 
-## Timeline Recommendations
-
-### Week 1-2: Preparation
-- Review current usage
-- Add new types to your project
-- Set up compatibility mode
-
-### Week 3-4: Parallel Implementation
-- Implement new methods alongside old ones
-- Use migration helpers
-- Test thoroughly
-
-### Week 5-6: Gradual Rollout
-- Replace old methods one endpoint at a time
-- Monitor for issues
-- Update tests
-
-### Week 7-8: Cleanup
-- Remove legacy method usage
-- Enable strict mode
-- Update documentation
-
-## Support and Troubleshooting
-
-### Enable Debug Logging
-```go
-config := security.CompatibilityConfig{
-    Mode:                   security.CompatibilityModeEnabled,
-    LogDeprecationWarnings: true,
-    FailOnLegacyMethods:    false,
-}
-```
+## Error Handling
 
 ### Common Error Messages
-- `"validation error for field 'user_id': is required"` - UserID is missing
+- `"validation error for field 'user_id': is required"` - UserID field is missing or empty
 - `"validation error for field 'email': must be a valid email address"` - Invalid email format
-- `"legacy method GenerateToken is deprecated, use GenerateTokenV2 instead"` - Use new method
+- `"token has invalid claims: token is expired"` - Token has expired
+- `"insufficient scopes: required [read write], got [read]"` - Token doesn't have required scopes
 
-### Getting Help
-1. Check validation errors for specific field issues
-2. Use migration helpers for common patterns
-3. Review examples in this guide
-4. Enable debug logging to see what's happening
+### Debugging Tips
+1. **Check validation errors** for specific field issues
+2. **Review token expiration** settings in your JWT configuration
+3. **Verify scopes** match between token generation and validation
+4. **Use structured logging** to track token lifecycle
+5. **Test with known good data** to isolate issues
 
-This migration provides significant benefits in terms of type safety, validation, and maintainability while maintaining backward compatibility during the transition period.
+## Best Practices
+
+### Security Considerations
+- Always validate tokens on protected endpoints
+- Use appropriate scopes for different operations
+- Set reasonable token expiration times
+- Include environment information in metadata
+- Log security events for monitoring
+
+### Performance Tips
+- Cache validation results when appropriate
+- Use connection pooling for database operations
+- Consider token refresh strategies for long-lived sessions
+- Monitor token generation and validation metrics
+
+### Code Organization
+- Create helper functions for common token patterns
+- Use constants for scope definitions
+- Implement middleware for automatic token validation
+- Structure your claims data consistently across the application
+
+This strongly-typed API provides significant benefits in terms of type safety, validation, and maintainability while offering a clean, modern interface for security operations.

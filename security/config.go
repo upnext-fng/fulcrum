@@ -1,9 +1,13 @@
 package security
 
-import "time"
+import (
+	"github.com/upnext-fng/fulcrum/security/jwt"
+	"github.com/upnext-fng/fulcrum/security/middleware"
+	"github.com/upnext-fng/fulcrum/security/password"
+)
 
 type Config struct {
-	JWTSecret string        `mapstructure:"jwt_secret"`
-	TokenTTL  time.Duration `mapstructure:"token_ttl"`
-	HashCost  int           `mapstructure:"hash_cost"`
+	JWT        jwt.Config        `mapstructure:"jwt"`
+	Password   password.Config   `mapstructure:"password"`
+	Middleware middleware.Config `mapstructure:"middleware"`
 }

@@ -1,6 +1,7 @@
 package security
 
 import (
+	"fmt"
 	"time"
 )
 
@@ -198,17 +199,11 @@ func (cc *CustomClaims) GetExternalID(provider string) string {
 
 // Validation methods
 func (tr *TokenRequest) Validate() error {
-	if tr.UserClaims.UserID == "" {
-		return ErrInvalidUserID
-	}
-	return nil
+	return ValidateTokenRequest(*tr)
 }
 
 func (vr *ValidationRequest) Validate() error {
-	if vr.Token == "" {
-		return ErrInvalidToken
-	}
-	return nil
+	return ValidateValidationRequest(*vr)
 }
 
 // Error definitions

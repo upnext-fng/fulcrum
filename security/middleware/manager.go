@@ -10,14 +10,19 @@ import (
 )
 
 type manager struct {
-	config     Config
-	jwtService jwt.Service
+	config       Config
+	jwtService   jwt.Service
+	claimsParser jwt.ClaimsParser
 }
 
 func NewManager(config Config, jwtService jwt.Service) Service {
+	// Create claims parser using JWT config from middleware config
+	claimsParser := jwt.NewClaimsParser(config.JWTConfig)
+
 	return &manager{
-		config:     config,
-		jwtService: jwtService,
+		config:       config,
+		jwtService:   jwtService,
+		claimsParser: claimsParser,
 	}
 }
 
@@ -38,11 +43,11 @@ func (m *manager) JWTMiddleware() echo.MiddlewareFunc {
 				return m.createUnauthorizedError("invalid or expired token")
 			}
 
-			if !token.Valid {
+			if !token.IsValid {
 				return m.createUnauthorizedError("invalid token")
 			}
 
-			claims, err := m.jwtService.ParseClaims(token)
+			claims, err := m.claimsParser.ParseClaims(token.Token)
 			if err != nil {
 				return m.createUnauthorizedError("invalid token claims")
 			}
@@ -99,7 +104,11 @@ func (m *manager) ExtractToken(c echo.Context) string {
 }
 
 func (m *manager) ValidateToken(tokenString string) (*jwtlib.Token, error) {
-	return m.jwtService.ValidateToken(tokenString)
+	validatedToken, err := m.jwtService.ValidateToken(tokenString)
+	if err != nil {
+		return nil, err
+	}
+	return validatedToken.Token, nil
 }
 
 func (m *manager) createUnauthorizedError(message string) error {
